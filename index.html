@@ -30,7 +30,7 @@
     .app {
       display: grid;
       grid-template-columns: 380px 1fr;
-      grid-template-rows: auto 1fr;
+      grid-template-rows: auto auto 1fr;
       height: 100vh;
       min-height: 100vh;
     }
@@ -38,10 +38,14 @@
       body { overflow: hidden; }
       .app {
         grid-template-columns: 1fr;
-        grid-template-rows: auto minmax(0, 38vh) 1fr;
+        grid-template-rows: auto auto minmax(0, 32vh) 1fr;
         height: 100vh;
         height: 100dvh;
       }
+      .timeline-bar { padding: 10px 12px 12px; }
+      .timeline-bar .timeline-slider-wrap { min-width: 120px; }
+      .timeline-bar input[type="range"]::-webkit-slider-thumb { width: 24px; height: 24px; }
+      .timeline-bar input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; }
       .sidebar {
         border-right: none;
         border-bottom: 1px solid var(--border);
@@ -177,6 +181,60 @@
       color: var(--muted);
     }
     .wind-text strong { color: var(--text); }
+    .timeline-bar {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px 18px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    .timeline-bar .timeline-label {
+      font-size: 0.9375rem;
+      color: var(--muted);
+      min-width: 140px;
+    }
+    .timeline-bar .timeline-label strong {
+      color: var(--text);
+      font-size: 1rem;
+    }
+    .timeline-bar .timeline-slider-wrap {
+      flex: 1;
+      min-width: 200px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .timeline-bar input[type="range"] {
+      flex: 1;
+      height: 28px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: linear-gradient(to right, var(--border), var(--accent));
+      border-radius: 14px;
+      outline: none;
+    }
+    .timeline-bar input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(88, 166, 255, 0.6);
+      border: 2px solid var(--text);
+    }
+    .timeline-bar input[type="range"]::-moz-range-thumb {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(88, 166, 255, 0.6);
+      border: 2px solid var(--text);
+    }
     .map-wrap {
       position: relative;
       width: 100%;
@@ -203,6 +261,7 @@
       z-index: 1000;
     }
     .wind-legend strong { color: var(--text); }
+    .wind-legend .legend-port { color: var(--glow); font-size: 0.75rem; }
     .loading {
       display: flex;
       align-items: center;
@@ -228,7 +287,12 @@
     }
     .leaflet-marker-icon.port-marker,
     .port-marker-icon { background: none !important; border: none !important; }
-    .port-marker-icon span { filter: drop-shadow(0 0 2px rgba(0,0,0,0.8)); }
+    .port-marker-icon .port-weather-icon {
+      font-size: 22px;
+      line-height: 1;
+      display: inline-block;
+      filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+    }
     .wind-marker {
       display: flex;
       align-items: center;
@@ -269,6 +333,12 @@
     .wind-flow .particle:nth-child(5) { animation-delay: 0.6s; }
     .wind-flow .particle:nth-child(6) { animation-delay: 0.75s; }
     .wind-flow .particle:nth-child(7) { animation-delay: 0.9s; }
+    .selected-port-wind .wind-flow .particle {
+      background: rgba(63, 185, 80, 0.95);
+      box-shadow: 0 0 8px rgba(63, 185, 80, 0.9);
+    }
+    .selected-port-wind .wind-flow { width: 40px; height: 40px; }
+    .selected-port-wind .wind-flow .particle { width: 4px; height: 4px; margin-left: -2px; margin-top: -2px; }
     @keyframes wind-drift {
       0% { transform: translateX(-18px); opacity: 0; }
       15% { opacity: 1; }
@@ -300,6 +370,12 @@
       <h1>🐙 ホタルイカ予測</h1>
       <span class="sub">富山湾｜風向き・気温・天気</span>
     </header>
+    <div class="timeline-bar" id="timelineBar" style="display:none;">
+      <span class="timeline-label" id="timelineLabel">表示中: <strong>—</strong></span>
+      <div class="timeline-slider-wrap">
+        <input type="range" id="timelineSlider" min="0" max="167" value="0" step="1" title="時刻を選択" />
+      </div>
+    </div>
     <aside class="sidebar">
       <h2>港を選択</h2>
       <div class="port-list" id="portList">
@@ -330,7 +406,8 @@
     <div class="map-wrap">
       <div id="map"></div>
       <div class="wind-legend">
-        <strong>風</strong>：流れの向きが風の吹く方向（Windy風アニメーション）
+        <strong>風</strong>：流れ＝風の吹く方向。<br>
+        <span class="legend-port">緑＝選択港（左パネルと同一データ）</span>　青＝湾上グリッド
       </div>
     </div>
   </div>
@@ -369,6 +446,19 @@
         85: 'にわか雪', 86: 'にわか雪', 95: '雷', 96: '雷', 99: '雷',
       };
 
+      const WMO_ICONS = {
+        0: '☀️', 1: '🌤', 2: '⛅', 3: '☁️',
+        45: '🌫', 48: '🌫', 51: '🌧', 53: '🌧', 55: '🌧',
+        61: '🌧', 63: '🌧', 65: '🌧', 71: '❄️', 73: '❄️', 75: '❄️', 77: '❄️',
+        80: '🌦', 81: '🌦', 82: '🌦', 85: '🌨', 86: '🌨',
+        95: '⛈', 96: '⛈', 99: '⛈',
+      };
+
+      function getWeatherIcon(code) {
+        if (code === undefined || code === null) return '🌡';
+        return WMO_ICONS[code] || '🌡';
+      }
+
       function wmoToDesc(code) {
         if (code === undefined || code === null) return '—';
         return WMO_CODES[code] || '天気コード ' + code;
@@ -391,9 +481,13 @@
 
       const portLayer = L.layerGroup().addTo(map);
       const windLayer = L.layerGroup().addTo(map);
+      const selectedPortWindLayer = L.layerGroup().addTo(map);
 
       let portWeather = {};
       let selectedPortId = null;
+      let windGridHourlyData = [];
+      let hourlyTimeLabels = [];
+      let currentHourIndex = 0;
 
       function createWindIconHtml(degree, speedKmh) {
         const rot = (degree || 0) + 180;
@@ -405,14 +499,14 @@
       function fetchWeather() {
         const lats = PORTS.map(p => p.lat).join(',');
         const lons = PORTS.map(p => p.lon).join(',');
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=7&timezone=Asia%2FTokyo`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current_weather=true&hourly=temperature_2m,weather_code,wind_direction_10m,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=7&timezone=Asia%2FTokyo`;
         return fetch(url).then(r => r.json());
       }
 
       function fetchWindGrid() {
         const lats = WIND_GRID.map(p => p.lat).join(',');
         const lons = WIND_GRID.map(p => p.lon).join(',');
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current_weather=true&timezone=Asia%2FTokyo`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=wind_direction_10m,wind_speed_10m&forecast_days=7&timezone=Asia%2FTokyo`;
         return fetch(url).then(r => r.json());
       }
 
@@ -422,11 +516,19 @@
           const port = PORTS[i];
           if (!port) return;
           const cur = loc.current_weather || {};
+          const hourly = loc.hourly ? {
+            time: loc.hourly.time || [],
+            temperature_2m: loc.hourly.temperature_2m || [],
+            weather_code: loc.hourly.weather_code || [],
+            wind_direction_10m: loc.hourly.wind_direction_10m || [],
+            wind_speed_10m: loc.hourly.wind_speed_10m || [],
+          } : null;
           portWeather[port.id] = {
             ...port,
             ...cur,
             weatherDesc: wmoToDesc(cur.weathercode),
             windDir: windDegToDir(cur.winddirection),
+            hourly: hourly,
             daily: loc.daily ? {
               time: loc.daily.time || [],
               max: loc.daily.temperature_2m_max || [],
@@ -437,34 +539,73 @@
         });
       }
 
-      function applyWindGrid(data) {
+      function formatHourLabel(isoDateTime) {
+        if (!isoDateTime) return '—';
+        var s = String(isoDateTime);
+        var part = s.split('T');
+        if (part.length < 2) return s;
+        var datePart = part[0].split('-');
+        var timePart = part[1].slice(0, 5).split(':');
+        var m = parseInt(datePart[1], 10);
+        var day = parseInt(datePart[2], 10);
+        var h = timePart[0] ? parseInt(timePart[0], 10) : 0;
+        var min = timePart[1] ? parseInt(timePart[1], 10) : 0;
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        return m + '/' + day + ' ' + pad(h) + ':' + pad(min);
+      }
+
+      function applyWindGridForHour(hourIndex) {
         windLayer.clearLayers();
-        const list = Array.isArray(data) ? data : [data];
-        list.forEach((loc, i) => {
-          const point = WIND_GRID[i];
-          if (!point || !loc.current_weather) return;
-          const deg = loc.current_weather.winddirection;
-          const speed = loc.current_weather.windspeed;
-          const icon = L.divIcon({
-            className: 'wind-marker-icon',
-            html: createWindIconHtml(deg, speed),
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
+        selectedPortWindLayer.clearLayers();
+        if (hourIndex < 0) return;
+        if (windGridHourlyData.length) {
+          windGridHourlyData.forEach((loc, i) => {
+            const point = WIND_GRID[i];
+            if (!point || !loc.hourly) return;
+            const dir = loc.hourly.wind_direction_10m;
+            const speed = loc.hourly.wind_speed_10m;
+            const deg = (dir && dir[hourIndex] != null) ? dir[hourIndex] : 0;
+            const sp = (speed && speed[hourIndex] != null) ? speed[hourIndex] : 0;
+            const icon = L.divIcon({
+              className: 'wind-marker-icon',
+              html: createWindIconHtml(deg, sp),
+              iconSize: [32, 32],
+              iconAnchor: [16, 16],
+            });
+            L.marker([point.lat, point.lon], { icon }).addTo(windLayer);
           });
-          L.marker([point.lat, point.lon], { icon }).addTo(windLayer);
-        });
+        }
+        var w = selectedPortId ? portWeather[selectedPortId] : null;
+        if (w && w.hourly && w.hourly.wind_direction_10m && w.hourly.wind_direction_10m[hourIndex] != null) {
+          var deg = w.hourly.wind_direction_10m[hourIndex];
+          var sp = (w.hourly.wind_speed_10m && w.hourly.wind_speed_10m[hourIndex] != null) ? w.hourly.wind_speed_10m[hourIndex] : 0;
+          var icon = L.divIcon({
+            className: 'wind-marker-icon selected-port-wind',
+            html: createWindIconHtml(deg, sp),
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+          });
+          L.marker([w.lat, w.lon], { icon: icon }).addTo(selectedPortWindLayer);
+        }
       }
 
       function renderPortList() {
-        const wrap = document.getElementById('portList');
-        wrap.innerHTML = PORTS.map(p => {
-          const w = portWeather[p.id];
-          const temp = w ? `${w.temperature}°C` : '—';
-          const active = selectedPortId === p.id ? ' active' : '';
-          return `<button type="button" class="port-btn${active}" data-port="${p.id}">${p.name}<span class="temp">${temp}</span></button>`;
+        var wrap = document.getElementById('portList');
+        var idx = currentHourIndex;
+        wrap.innerHTML = PORTS.map(function (p) {
+          var w = portWeather[p.id];
+          var temp = '—';
+          if (w) {
+            if (w.hourly && w.hourly.temperature_2m && w.hourly.temperature_2m[idx] != null)
+              temp = Math.round(w.hourly.temperature_2m[idx]) + '°C';
+            else if (w.temperature != null)
+              temp = Math.round(w.temperature) + '°C';
+          }
+          var active = selectedPortId === p.id ? ' active' : '';
+          return '<button type="button" class="port-btn' + active + '" data-port="' + p.id + '">' + p.name + '<span class="temp">' + temp + '</span></button>';
         }).join('');
-        wrap.querySelectorAll('.port-btn').forEach(btn => {
-          btn.addEventListener('click', () => selectPort(btn.dataset.port));
+        wrap.querySelectorAll('.port-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () { selectPort(btn.dataset.port); });
         });
       }
 
@@ -478,11 +619,9 @@
         return `${m}/${day} ${week}`;
       }
 
-      function selectPort(id) {
-        selectedPortId = id;
-        renderPortList();
-        const w = portWeather[id];
-        const port = PORTS.find(p => p.id === id);
+      function updatePanelForHour() {
+        const w = selectedPortId ? portWeather[selectedPortId] : null;
+        const port = selectedPortId ? PORTS.find(p => p.id === selectedPortId) : null;
         const locName = port ? port.name : '—';
         document.getElementById('panelLocation').textContent = locName;
         const weekEl = document.getElementById('weekForecast');
@@ -495,11 +634,23 @@
           weekEl.style.display = 'none';
           return;
         }
-        document.getElementById('panelTemp').innerHTML = `${Math.round(w.temperature)}<span>°C</span>`;
-        document.getElementById('panelDesc').textContent = w.weatherDesc;
-        document.getElementById('panelWind').innerHTML = `風 ${w.windDir} 風速 ${w.windspeed} km/h`;
-        document.getElementById('panelWindArrow').style.transform = `rotate(${(w.winddirection || 0) + 180}deg)`;
-
+        const hasHourly = w.hourly && w.hourly.time && w.hourly.time.length;
+        const idx = currentHourIndex;
+        if (hasHourly && idx >= 0 && idx < w.hourly.time.length) {
+          const t = w.hourly.temperature_2m[idx];
+          const code = w.hourly.weather_code[idx];
+          const deg = w.hourly.wind_direction_10m[idx];
+          const speed = w.hourly.wind_speed_10m[idx];
+          document.getElementById('panelTemp').innerHTML = (t != null ? Math.round(t) : '—') + '<span>°C</span>';
+          document.getElementById('panelDesc').textContent = wmoToDesc(code);
+          document.getElementById('panelWind').innerHTML = '風 ' + windDegToDir(deg) + ' 風速 ' + (speed != null ? speed : '—') + ' km/h';
+          document.getElementById('panelWindArrow').style.transform = `rotate(${(deg || 0) + 180}deg)`;
+        } else {
+          document.getElementById('panelTemp').innerHTML = (w.temperature != null ? Math.round(w.temperature) : '—') + '<span>°C</span>';
+          document.getElementById('panelDesc').textContent = w.weatherDesc;
+          document.getElementById('panelWind').innerHTML = '風 ' + (w.windDir || '—') + ' 風速 ' + (w.windspeed != null ? w.windspeed : '—') + ' km/h';
+          document.getElementById('panelWindArrow').style.transform = `rotate(${(w.winddirection || 0) + 180}deg)`;
+        }
         if (w.daily && w.daily.time && w.daily.time.length) {
           weekEl.style.display = 'block';
           rowsEl.innerHTML = w.daily.time.map((date, i) => {
@@ -514,39 +665,89 @@
         }
       }
 
-      function addPortMarkers() {
-        const portIcon = L.divIcon({
-          className: 'port-marker-icon',
-          html: '<span style="font-size:18px;">⚓</span>',
-          iconSize: [24, 24],
-          iconAnchor: [12, 12],
-        });
-        PORTS.forEach(p => {
-          const marker = L.marker([p.lat, p.lon], {
+      function selectPort(id) {
+        selectedPortId = id;
+        renderPortList();
+        updatePanelForHour();
+      }
+
+      function updatePortMarkers() {
+        portLayer.clearLayers();
+        var idx = currentHourIndex;
+        PORTS.forEach(function (p) {
+          var w = portWeather[p.id];
+          var code = (w && w.hourly && w.hourly.weather_code && w.hourly.weather_code[idx] != null)
+            ? w.hourly.weather_code[idx]
+            : (w && w.weathercode != null ? w.weathercode : null);
+          var iconChar = getWeatherIcon(code);
+          var portIcon = L.divIcon({
+            className: 'port-marker-icon',
+            html: '<span class="port-weather-icon" title="' + (p.name || '') + '">' + iconChar + '</span>',
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+          });
+          var marker = L.marker([p.lat, p.lon], {
             icon: portIcon,
             title: p.name,
           }).addTo(portLayer);
-          marker.on('click', () => {
+          marker.on('click', function () {
             selectPort(p.id);
             renderPortList();
           });
         });
       }
 
+      function setTimelineToNow(timeStrings) {
+        if (!timeStrings || !timeStrings.length) return;
+        var now = new Date();
+        var best = 0;
+        var bestDiff = 1e9;
+        timeStrings.forEach(function (iso, i) {
+          var d = new Date(iso + '+09:00');
+          if (isNaN(d.getTime())) return;
+          var diff = Math.abs(d - now);
+          if (diff < bestDiff) { bestDiff = diff; best = i; }
+        });
+        currentHourIndex = best;
+      }
+
+      function onTimelineInput() {
+        var slider = document.getElementById('timelineSlider');
+        currentHourIndex = parseInt(slider.value, 10);
+        document.getElementById('timelineLabel').innerHTML = '表示中: <strong>' + (hourlyTimeLabels[currentHourIndex] || '—') + '</strong>';
+        applyWindGridForHour(currentHourIndex);
+        updatePanelForHour();
+        renderPortList();
+        updatePortMarkers();
+      }
+
       Promise.all([fetchWeather(), fetchWindGrid()])
         .then(([portData, windData]) => {
           applyPortWeather(portData);
-          applyWindGrid(windData);
+          windGridHourlyData = Array.isArray(windData) ? windData : [windData];
+          var firstPort = Array.isArray(portData) ? portData[0] : portData;
+          var firstHourly = firstPort && firstPort.hourly && firstPort.hourly.time;
+          hourlyTimeLabels = firstHourly ? firstPort.hourly.time.map(function (t) { return formatHourLabel(t); }) : [];
+          setTimelineToNow(firstHourly);
+          document.getElementById('timelineBar').style.display = 'flex';
+          const slider = document.getElementById('timelineSlider');
+          const maxHour = Math.max(0, hourlyTimeLabels.length - 1);
+          slider.setAttribute('max', String(maxHour));
+          slider.value = String(currentHourIndex);
+          slider.addEventListener('input', onTimelineInput);
+          document.getElementById('timelineLabel').innerHTML = '表示中: <strong>' + (hourlyTimeLabels[currentHourIndex] || '—') + '</strong>';
+          applyWindGridForHour(currentHourIndex);
           renderPortList();
-          addPortMarkers();
+          updatePortMarkers();
           selectedPortId = 'namerikawa';
           selectPort('namerikawa');
           renderPortList();
+          updatePanelForHour();
           const t = (portData[0] || portData).current_weather?.time;
-          document.getElementById('updateTime').textContent = t ? `更新: ${t.replace('T', ' ').slice(0, 16)} (JST)` : '';
+          document.getElementById('updateTime').textContent = t ? '更新: ' + t.replace('T', ' ').slice(0, 16) + ' (JST)' : '';
         })
         .catch(err => {
-          document.getElementById('portList').innerHTML = `<div class="error-msg">天気の取得に失敗しました: ${err.message}</div>`;
+          document.getElementById('portList').innerHTML = '<div class="error-msg">天気の取得に失敗しました: ' + err.message + '</div>';
         });
     })();
   </script>
