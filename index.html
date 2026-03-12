@@ -228,7 +228,7 @@
       top: 50%;
       margin-left: -1.5px;
       margin-top: -1.5px;
-      animation: wind-drift linear infinite;
+      animation: wind-drift var(--wind-duration, 1.5s) linear infinite;
     }
     .wind-flow .particle:nth-child(1) { animation-delay: 0s; }
     .wind-flow .particle:nth-child(2) { animation-delay: 0.15s; }
@@ -354,14 +354,14 @@
       function createWindIconHtml(degree, speedKmh) {
         const rot = (degree || 0) + 180;
         const duration = Math.max(0.8, Math.min(2.5, 2.5 - (speedKmh || 0) * 0.06));
-        const particles = Array(7).fill(0).map((_, i) => `<span class="particle"></span>`).join('');
-        return `<div class="wind-flow" style="transform:rotate(${rot}deg)"><div style="animation-duration:${duration}s">${particles}</div></div>`;
+        const particles = Array(7).fill(0).map(() => '<span class="particle"></span>').join('');
+        return `<div class="wind-flow" style="transform:rotate(${rot}deg);--wind-duration:${duration}s">${particles}</div>`;
       }
 
       function fetchWeather() {
         const lats = PORTS.map(p => p.lat).join(',');
         const lons = PORTS.map(p => p.lon).join(',');
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current_weather=true&timezone=Asia%2FTokyo`;
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,weather_code&forecast_days=7&timezone=Asia%2FTokyo`;
         return fetch(url).then(r => r.json());
       }
 
@@ -376,12 +376,19 @@
         const list = Array.isArray(data) ? data : [data];
         list.forEach((loc, i) => {
           const port = PORTS[i];
-          if (!port || !loc.current_weather) return;
+          if (!port) return;
+          const cur = loc.current_weather || {};
           portWeather[port.id] = {
             ...port,
-            ...loc.current_weather,
-            weatherDesc: wmoToDesc(loc.current_weather.weathercode),
-            windDir: windDegToDir(loc.current_weather.winddirection),
+            ...cur,
+            weatherDesc: wmoToDesc(cur.weathercode),
+            windDir: windDegToDir(cur.winddirection),
+            daily: loc.daily ? {
+              time: loc.daily.time || [],
+              max: loc.daily.temperature_2m_max || [],
+              min: loc.daily.temperature_2m_min || [],
+              weather_code: loc.daily.weather_code || [],
+            } : null,
           };
         });
       }
@@ -393,11 +400,12 @@
           const point = WIND_GRID[i];
           if (!point || !loc.current_weather) return;
           const deg = loc.current_weather.winddirection;
+          const speed = loc.current_weather.windspeed;
           const icon = L.divIcon({
             className: 'wind-marker-icon',
-            html: createWindIconHtml(deg),
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
+            html: createWindIconHtml(deg, speed),
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
           });
           L.marker([point.lat, point.lon], { icon }).addTo(windLayer);
         });
