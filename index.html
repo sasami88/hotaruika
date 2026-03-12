@@ -19,18 +19,47 @@
       --port: #f0883e;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
+    html, body {
       font-family: 'Noto Sans JP', sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
     .app {
       display: grid;
       grid-template-columns: 380px 1fr;
       grid-template-rows: auto 1fr;
       height: 100vh;
+      min-height: 100vh;
+    }
+    @media (max-width: 768px) {
+      body { overflow: hidden; }
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 38vh) 1fr;
+        height: 100vh;
+        height: 100dvh;
+      }
+      .sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        overflow-y: auto;
+        min-height: 0;
+      }
+      .map-wrap {
+        min-height: 0;
+        min-height: 50vh;
+      }
+      #map { min-height: 280px; }
+      .wind-legend {
+        left: 8px;
+        bottom: 12px;
+        padding: 8px 10px;
+        font-size: 0.75rem;
+        max-width: calc(100vw - 24px);
+      }
     }
     header {
       grid-column: 1 / -1;
@@ -152,10 +181,13 @@
       position: relative;
       width: 100%;
       height: 100%;
+      min-width: 0;
+      min-height: 0;
     }
     #map {
       width: 100%;
       height: 100%;
+      min-height: 200px;
       background: #0a0e12;
     }
     .wind-legend {
@@ -289,12 +321,16 @@
           </div>
           <div class="wind-text" id="panelWind">風 — 風速 — km/h</div>
         </div>
+        <div class="week-forecast" id="weekForecast" style="display:none;">
+          <h3>一週間の予報</h3>
+          <div id="weekForecastRows"></div>
+        </div>
       </div>
     </aside>
     <div class="map-wrap">
       <div id="map"></div>
       <div class="wind-legend">
-        <strong>風向き</strong>：矢印の先が風の吹く方向（Windy形式）
+        <strong>風</strong>：流れの向きが風の吹く方向（Windy風アニメーション）
       </div>
     </div>
   </div>
@@ -305,17 +341,22 @@
       const TOYAMA_ZOOM = 9;
 
       const PORTS = [
-        { id: 'namerikawa', name: '滑川漁港', lat: 36.7767, lon: 137.3433 },
-        { id: 'uozu', name: '魚津港', lat: 36.8167, lon: 137.39 },
-        { id: 'shinminato', name: '新湊漁港', lat: 36.78, lon: 137.12 },
-        { id: 'iwase', name: '岩瀬', lat: 36.75, lon: 137.25 },
-        { id: 'yokata', name: '四方', lat: 36.80, lon: 137.15 },
-        { id: 'nyuzen', name: '入善', lat: 36.92, lon: 137.45 },
+        { id: 'amaharashi', name: '雨晴海岸', lat: 36.8186, lon: 137.0346 },
+        { id: 'shinminato', name: '新湊港', lat: 36.7872, lon: 137.0816 },
+        { id: 'ebie', name: '海老江海浜公園', lat: 36.7683, lon: 137.1421 },
+        { id: 'yokata', name: '四方港', lat: 36.7603, lon: 137.1931 },
+        { id: 'yaetsu', name: '八重津浜', lat: 36.7593, lon: 137.2041 },
+        { id: 'iwase', name: '岩瀬浜', lat: 36.7646, lon: 137.2380 },
+        { id: 'hamagurozaki', name: '浜黒崎海岸', lat: 36.7585, lon: 137.2865 },
+        { id: 'namerikawa', name: '滑川漁港', lat: 36.7723, lon: 137.3483 },
+        { id: 'namerikawa-park', name: '滑川海浜公園', lat: 36.7700, lon: 137.3500 },
+        { id: 'yoshiura', name: '吉浦浜', lat: 36.7900, lon: 137.3700 },
+        { id: 'uozu', name: '魚津漁港', lat: 36.8213, lon: 137.3938 },
       ];
 
       const WIND_GRID = [];
-      for (let lat = 36.66; lat <= 36.92; lat += 0.04) {
-        for (let lon = 137.02; lon <= 137.52; lon += 0.06) {
+      for (let lat = 36.68; lat <= 36.90; lat += 0.055) {
+        for (let lon = 137.05; lon <= 137.48; lon += 0.07) {
           WIND_GRID.push({ lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100 });
         }
       }
@@ -344,6 +385,9 @@
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap, &copy; CARTO'
       }).addTo(map);
+
+      window.addEventListener('resize', function () { map.invalidateSize(); });
+      setTimeout(function () { map.invalidateSize(); }, 100);
 
       const portLayer = L.layerGroup().addTo(map);
       const windLayer = L.layerGroup().addTo(map);
@@ -424,6 +468,16 @@
         });
       }
 
+      const DAY_NAMES = ['日', '月', '火', '水', '木', '金', '土'];
+      function formatDayLabel(isoDate) {
+        if (!isoDate) return '—';
+        const d = new Date(isoDate + 'T12:00:00+09:00');
+        const m = d.getMonth() + 1;
+        const day = d.getDate();
+        const week = DAY_NAMES[d.getDay()];
+        return `${m}/${day} ${week}`;
+      }
+
       function selectPort(id) {
         selectedPortId = id;
         renderPortList();
@@ -431,17 +485,33 @@
         const port = PORTS.find(p => p.id === id);
         const locName = port ? port.name : '—';
         document.getElementById('panelLocation').textContent = locName;
+        const weekEl = document.getElementById('weekForecast');
+        const rowsEl = document.getElementById('weekForecastRows');
         if (!w) {
           document.getElementById('panelTemp').innerHTML = '—<span>°C</span>';
           document.getElementById('panelDesc').textContent = '—';
           document.getElementById('panelWind').innerHTML = '風 — 風速 — km/h';
           document.getElementById('panelWindArrow').style.transform = 'rotate(0deg)';
+          weekEl.style.display = 'none';
           return;
         }
         document.getElementById('panelTemp').innerHTML = `${Math.round(w.temperature)}<span>°C</span>`;
         document.getElementById('panelDesc').textContent = w.weatherDesc;
         document.getElementById('panelWind').innerHTML = `風 ${w.windDir} 風速 ${w.windspeed} km/h`;
         document.getElementById('panelWindArrow').style.transform = `rotate(${(w.winddirection || 0) + 180}deg)`;
+
+        if (w.daily && w.daily.time && w.daily.time.length) {
+          weekEl.style.display = 'block';
+          rowsEl.innerHTML = w.daily.time.map((date, i) => {
+            const max = w.daily.max[i] != null ? Math.round(w.daily.max[i]) : '—';
+            const min = w.daily.min[i] != null ? Math.round(w.daily.min[i]) : '—';
+            const code = w.daily.weather_code[i];
+            const desc = wmoToDesc(code);
+            return `<div class="week-row"><span class="day-label">${formatDayLabel(date)}</span><span class="day-weather">${desc}</span><span class="day-max">${max}°</span><span class="day-min">${min}°</span></div>`;
+          }).join('');
+        } else {
+          weekEl.style.display = 'none';
+        }
       }
 
       function addPortMarkers() {
